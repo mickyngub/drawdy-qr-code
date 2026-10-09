@@ -9,31 +9,10 @@ import {
 } from "../src/shared/qr";
 import { captionInk, type QrSpec } from "../src/shared/spec";
 import type { PngImage } from "../src/shared/messages";
+import { wrapCaption } from "./lib/wrap";
 
 const CAPTION_FONT =
     'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif';
-
-function wrapLines(
-    ctx: CanvasRenderingContext2D,
-    text: string,
-    maxWidth: number
-): string[] {
-    const lines: string[] = [];
-    for (const paragraph of text.split("\n")) {
-        let line = "";
-        for (const word of paragraph.split(/(\s+)/)) {
-            const next = line + word;
-            if (line && ctx.measureText(next.trimEnd()).width > maxWidth) {
-                lines.push(line.trimEnd());
-                line = word.trimStart();
-            } else {
-                line = next;
-            }
-        }
-        lines.push(line.trimEnd());
-    }
-    return lines.filter((l, i) => l || i < lines.length - 1);
-}
 
 type Frame = {
     width: number;
@@ -58,10 +37,10 @@ function frameFor(
     }
     const fontPx = block.fontSize * unit;
     ctx.font = `${fontPx}px ${CAPTION_FONT}`;
-    const lines = wrapLines(
-        ctx,
+    const lines = wrapCaption(
         caption,
-        (spec.size - CAPTION_PADDING * 2) * unit
+        (spec.size - CAPTION_PADDING * 2) * unit,
+        (text) => ctx.measureText(text).width
     );
     const captionHeight = exactCaption
         ? Math.ceil(

@@ -20,6 +20,8 @@ export type WebviewToDriver =
     | { type: "edit" }
     | { type: "update"; spec: QrSpec; image?: PngImage }
     | { type: "stop-edit" }
+    | { type: "undo" }
+    | { type: "redo" }
     | { type: "close" };
 
 export type DriverToWebview =
@@ -27,5 +29,13 @@ export type DriverToWebview =
     | { type: "selection"; editable: boolean }
     | { type: "theme"; css: string }
     | { type: "load"; spec: QrSpec }
-    | { type: "placed"; updated: boolean; count: number }
+    | { type: "edit-ended" }
+    | { type: "placed"; mode: "new"; count: number }
+    | {
+          type: "placed";
+          mode: "update";
+          count: number;
+          undoSteps: number;
+          rotationReset: boolean;
+      }
     | { type: "error"; message: string };

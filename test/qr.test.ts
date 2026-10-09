@@ -2,7 +2,6 @@ import type { DrawdyElementSchema } from "@drawdy/driver-protocol";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-    batches,
     buildElements,
     captionBlock,
     elementCount,
@@ -270,13 +269,15 @@ test("image output uses whole pixels per module within 2048 px", () => {
     assert.deepEqual(small, { modulePx: 35, codePx: 1015, scale: 1015 / 240 });
 });
 
-test("large placements split into batches of at most 500", () => {
-    const items = Array.from({ length: 1201 }, (_, i) => i);
-    assert.deepEqual(
-        batches(items).map((b) => b.length),
-        [500, 500, 201]
-    );
-    assert.deepEqual(batches([]), []);
+test("every part of one code shares a group, and an update can keep the old one", () => {
+    const matrix = encode("https://example.com");
+    const plan = { matrix, spec: spec(), x: 0, y: 0, driverId: DRIVER };
+    const fresh = buildElements({ ...plan, nextId: counter() });
+    const groups = new Set(fresh.map((e) => e.groupId));
+    assert.equal(groups.size, 1);
+    assert.ok([...groups][0]);
+    const kept = buildElements({ ...plan, nextId: counter(), groupId: "old" });
+    assert.ok(kept.every((e) => e.groupId === "old"));
 });
 
 test("contrast warns below 4:1 and when the foreground is lighter", () => {

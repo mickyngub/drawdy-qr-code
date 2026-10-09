@@ -3,7 +3,6 @@ import { qrcodegen } from "../vendor/qrcodegen";
 import { captionInk, type Ecc, type ModuleStyle, type QrSpec } from "./spec";
 
 export const MAX_ELEMENTS = 3000;
-export const BATCH_SIZE = 500;
 export const CAPTION_PADDING = 8;
 export const MAX_IMAGE_SIDE = 2048;
 const STROKE = 1;
@@ -243,13 +242,15 @@ export type ElementPlan = {
     y: number;
     driverId: string;
     nextId: () => string;
+    /** Every part of one code shares this group, so the board selects and moves it as one. */
+    groupId?: string;
 };
 
 export function buildElements(plan: ElementPlan): DrawdyElementSchema[] {
     const { matrix, spec, driverId, nextId } = plan;
     const unit = spec.size / spanModules(matrix, spec.quiet);
     const caption = captionBlock(spec.caption, spec.size);
-    const groupId = nextId();
+    const groupId = plan.groupId ?? nextId();
     const part = { [driverId]: { v: 1, part: true } };
     const colour = { fg: spec.fg, bg: spec.bg };
 
@@ -329,13 +330,6 @@ export function pixelLayout(matrix: Matrix, spec: QrSpec): PixelLayout {
     return { modulePx, codePx, scale: codePx / spec.size };
 }
 
-export function batches<T>(items: T[], size = BATCH_SIZE): T[][] {
-    const out: T[][] = [];
-    for (let i = 0; i < items.length; i += size) {
-        out.push(items.slice(i, i + size));
-    }
-    return out;
-}
 
 export const TOO_LONG_MESSAGE =
     "That is too much for one QR code. Shorten it, or pick a lower error correction.";

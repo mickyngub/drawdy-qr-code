@@ -3,7 +3,7 @@
     "driverName": "QR Code",
     "driverVersion": "1.0.0",
     "description": "Make a scannable QR code for a link, text, Wi-Fi login, email, phone number, SMS, contact card or map location. Pick the error correction, quiet zone, size and colours, and square, dot or rounded modules, with an optional caption. Place it on the board as shapes you can recolour, or as a crisp PNG image. Select a code you made to edit it and update it in place.",
-    "icon": "icon.svg",
+    "icon": "icon.png",
     "main": "main.js",
     "permissions": [
         "dom",

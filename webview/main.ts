@@ -30,6 +30,7 @@ import {
     type QrSpec,
     type WifiSecurity,
 } from "../src/shared/spec";
+import { isField, keyAction } from "./lib/keys";
 import { drawPreview, pngSize, renderPng } from "./render";
 import {
     el,
@@ -54,6 +55,7 @@ type DrawdyWebviewApi = {
 declare function acquireDrawdyApi(): DrawdyWebviewApi;
 
 const SETTINGS_DEBOUNCE_MS = 400;
+const REPLY_TIMEOUT_MS = 20000;
 const PREVIEW_BOX = { width: 200, height: 164 };
 
 const CONTENT_LABELS: [ContentType, string][] = [
@@ -120,7 +122,7 @@ const GROUPS: Record<ContentType, (FieldDef | "security" | "hidden")[]> = {
     wifi: [
         { key: "ssid", label: "Network name", placeholder: "Office guest" },
         "security",
-        { key: "password", label: "Password" },
+        { key: "password", label: "Password", type: "password" },
         "hidden",
     ],
     email: [
@@ -186,13 +188,17 @@ const hintText = document.getElementById("hint-text") as HTMLSpanElement;
 const readout = document.getElementById("readout") as HTMLDivElement;
 const content = document.getElementById("content") as HTMLDivElement;
 const statusLine = document.getElementById("status") as HTMLDivElement;
-const primary = document.getElementById("primary") as HTMLButtonElement;
-const secondary = document.getElementById("secondary") as HTMLButtonElement;
+const placeButton = document.getElementById("place") as HTMLButtonElement;
+const updateButton = document.getElementById("update") as HTMLButtonElement;
+const editButton = document.getElementById("edit") as HTMLButtonElement;
+const banner = document.getElementById("edit-banner") as HTMLDivElement;
+const stopEditButton = document.getElementById("stop-edit") as HTMLButtonElement;
 
 let spec: QrSpec = normalizeSpec(DEFAULT_SPEC);
 let editing = false;
 let editable = false;
 let busy = false;
+let busyTimer = 0;
 let settingsTimer = 0;
 let capStatus = false;
 
@@ -280,12 +286,34 @@ function canPlace(): boolean {
 }
 
 function paintFooter(): void {
-    primary.textContent = editing ? "Update on board" : "Place on board";
-    primary.disabled = busy || !canPlace();
-    const showSecondary = editing || editable;
-    secondary.textContent = editing ? "Stop editing" : "Edit selected";
-    secondary.classList.toggle("ghost", !showSecondary);
-    secondary.disabled = busy || !showSecondary;
+    placeButton.textContent = editing ? "Place as new" : "Place on board";
+    placeButton.classList.toggle("primary", !editing);
+    placeButton.disabled = busy || !canPlace();
+    updateButton.hidden = !editing;
+    updateButton.disabled = busy || !canPlace();
+    editButton.hidden = !editable;
+    editButton.disabled = busy;
+    banner.hidden = !editing;
+}
+
+function setBusy(next: boolean): void {
+    busy = next;
+    if (busyTimer) clearTimeout(busyTimer);
+    busyTimer = 0;
+    if (next) {
+        busyTimer = setTimeout(() => {
+            busyTimer = 0;
+            busy = false;
+            setStatus("Drawdy didn't answer. Try again.", "bad");
+            paintFooter();
+        }, REPLY_TIMEOUT_MS) as unknown as number;
+    }
+    paintFooter();
+}
+
+function setEditing(next: boolean): void {
+    editing = next;
+    paintFooter();
 }
 
 function paintContrast(): void {
@@ -538,8 +566,9 @@ function buildContent(): void {
     );
 }
 
-function submit(): void {
+function submit(update: boolean): void {
     if (busy || !canPlace() || !current.matrix) return;
+    if (update && !editing) return;
     let image: PngImage | undefined;
     if (spec.output === "image") {
         const png = renderPng(current.matrix, spec);
@@ -549,33 +578,67 @@ function submit(): void {
         }
         image = png;
     }
-    busy = true;
-    paintFooter();
-    setStatus(editing ? "Updating…" : "Placing…");
+    setBusy(true);
+    setStatus(update ? "Updating…" : "Placing…");
     send(
-        editing
+        update
             ? { type: "update", spec, image }
             : { type: "place", spec, image }
     );
 }
 
+function addPasswordToggle(): void {
+    const password = controls.texts.password;
+    const head = password?.wrap.querySelector(".field-head");
+    if (!password || !head) return;
+    const toggle = el("button", "link-btn", head as HTMLElement);
+    toggle.type = "button";
+    toggle.textContent = "Show";
+    toggle.setAttribute("aria-pressed", "false");
+    toggle.setAttribute("aria-label", "Show the password");
+    toggle.addEventListener("click", () => {
+        const input = password.input as HTMLInputElement;
+        const show = input.type === "password";
+        input.type = show ? "text" : "password";
+        toggle.textContent = show ? "Hide" : "Show";
+        toggle.setAttribute("aria-pressed", String(show));
+        toggle.setAttribute(
+            "aria-label",
+            show ? "Hide the password" : "Show the password"
+        );
+    });
+}
+
+function placedText(message: Extract<DriverToWebview, { type: "placed" }>): string {
+    if (message.mode === "new") {
+        return "Placed the QR code. Press ⌘Z or Ctrl+Z to undo.";
+    }
+    const times =
+        message.undoSteps === 2 ? "twice" : `${message.undoSteps} times`;
+    return `Updated the QR code${
+        message.rotationReset ? " (rotation reset)" : ""
+    }. Press ⌘Z or Ctrl+Z ${times} to get the old version back.`;
+}
+
 function wire(): void {
-    primary.addEventListener("click", submit);
-    secondary.addEventListener("click", () => {
+    placeButton.addEventListener("click", () => submit(false));
+    updateButton.addEventListener("click", () => submit(true));
+    editButton.addEventListener("click", () => {
         if (busy) return;
-        if (editing) {
-            editing = false;
-            send({ type: "stop-edit" });
-            setStatus("");
-            paintFooter();
-            return;
-        }
-        setStatus("Loading the selected code…");
+        setStatus("Reading the selected QR code…");
         send({ type: "edit" });
     });
+    stopEditButton.addEventListener("click", () => {
+        setEditing(false);
+        send({ type: "stop-edit" });
+        setStatus("Stopped editing. Place on board adds a new QR code.");
+    });
     document.addEventListener("keydown", (event) => {
-        if (event.key !== "Escape") return;
-        send({ type: "close" });
+        const action = keyAction(event, isField(event.target));
+        if (!action) return;
+        event.preventDefault();
+        if (action === "blur") (event.target as HTMLElement).blur();
+        else send({ type: action });
     });
 }
 
@@ -603,31 +666,29 @@ function handle(message: DriverToWebview): void {
             pushControls();
             recompute();
             setStatus(
-                "Editing the selected code. Change it, then click Update on board."
+                "Loaded the selected QR code. Change it, then click Update on board."
             );
+            return;
+        }
+        case "edit-ended": {
+            setEditing(false);
             return;
         }
         case "placed": {
-            busy = false;
-            setStatus(
-                message.updated
-                    ? "Updated on the board."
-                    : "Placed on the board.",
-                "good"
-            );
-            paintFooter();
+            setBusy(false);
+            setStatus(placedText(message), "good");
             return;
         }
         case "error": {
-            busy = false;
+            setBusy(false);
             setStatus(message.message, "bad");
-            paintFooter();
             return;
         }
     }
 }
 
 buildContent();
+addPasswordToggle();
 wire();
 pushControls();
 recompute();

@@ -248,14 +248,31 @@ footer {
     min-height: 28px;
     font-size: 10px;
     color: var(--drawdy-muted-foreground, #7a7a7a);
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
 }
 .status.bad { color: var(--drawdy-destructive, #dc2626); }
 .status.good { color: var(--drawdy-success, #16a34a); }
-.actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.btn[hidden], .banner[hidden] { display: none; }
+.banner {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 12px;
+    font-size: 11px;
+    background: color-mix(in srgb, var(--drawdy-primary, #4f46e5) 12%, transparent);
+    border-bottom: 1px solid var(--drawdy-border, #e5e5e5);
+}
+.link {
+    border: none;
+    background: transparent;
+    padding: 2px 0;
+    cursor: pointer;
+    font-size: 11px;
+    text-decoration: underline;
+    color: var(--drawdy-foreground, #111111);
+}
 .btn {
     flex: none;
     padding: 5px 11px;
@@ -272,10 +289,13 @@ footer {
     border-color: var(--drawdy-primary, #4f46e5);
     color: var(--drawdy-primary-foreground, #ffffff);
 }
-.btn.ghost { visibility: hidden; }
 `;
 
 const BODY = `
+<div class="banner" id="edit-banner" hidden>
+    <span>Editing a QR code from the board.</span>
+    <button type="button" class="link" id="stop-edit">Stop editing</button>
+</div>
 <main class="scroll" id="scroll">
     <div class="stage" id="stage">
         <canvas id="canvas" role="img" aria-label="QR code preview" hidden></canvas>
@@ -287,8 +307,9 @@ const BODY = `
 <footer>
     <div class="status" id="status" role="status" aria-live="polite"></div>
     <div class="actions">
-        <button type="button" class="btn ghost" id="secondary">Edit selected</button>
-        <button type="button" class="btn primary" id="primary" disabled>Place on board</button>
+        <button type="button" class="btn" id="edit" hidden>Edit selected</button>
+        <button type="button" class="btn primary" id="place" disabled>Place on board</button>
+        <button type="button" class="btn primary" id="update" hidden>Update on board</button>
     </div>
 </footer>
 `;

@@ -24,6 +24,37 @@ const payloadOf = (result: ReturnType<typeof buildPayload>): string => {
     return result.payload;
 };
 
+test("a host with a port is not a scheme, so it still gets https", () => {
+    assert.equal(
+        payloadOf(urlPayload("example.com:8080/path")),
+        "https://example.com:8080/path"
+    );
+    assert.equal(
+        payloadOf(urlPayload("localhost:3000")),
+        "https://localhost:3000"
+    );
+});
+
+test("schemes phones open without slashes are kept as typed", () => {
+    for (const link of [
+        "mailto:ada@example.com",
+        "tel:+15550109999",
+        "sms:+15550109999",
+        "smsto:+15550109999:hi",
+        "geo:13.75,100.5",
+        "market://details?id=x",
+        "market:details?id=x",
+        "WIFI:T:WPA;S:x;P:y;;",
+        "MATMSG:TO:a@b.c;;",
+        "BEGIN:VCARD",
+        "BEGIN:VEVENT",
+        "custom-app://open",
+    ]) {
+        assert.equal(payloadOf(urlPayload(link)), link);
+    }
+    assert.equal(payloadOf(urlPayload("javascript:alert(1)")), "https://javascript:alert(1)");
+});
+
 test("a link without a scheme gets https, one with a scheme is kept", () => {
     assert.equal(
         payloadOf(urlPayload(" drawdy.io/b?id=4 ")),

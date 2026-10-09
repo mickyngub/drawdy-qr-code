@@ -33,13 +33,21 @@ export function cleanPhone(value: string): string {
     return value.replace(/[\s().\- ]/g, "");
 }
 
-const SCHEME = /^[a-z][a-z0-9+.-]*:/i;
+const SCHEME_WITH_SLASHES = /^[a-z][a-z0-9+.-]*:\/\//i;
+// Schemes phones open without "//". Anything else before a colon, like
+// example.com:8080 or localhost:3000, is a host and port.
+const BARE_SCHEME =
+    /^(?:mailto|tel|sms|smsto|geo|market|wifi|matmsg):|^begin:(?:vcard|vevent)/i;
+
+export function hasScheme(url: string): boolean {
+    return SCHEME_WITH_SLASHES.test(url) || BARE_SCHEME.test(url);
+}
 
 export function urlPayload(url: string): PayloadResult {
     const trimmed = url.trim();
     if (!trimmed) return empty("Type a link to make a code.");
     if (/\s/.test(trimmed)) return invalid("A link cannot contain spaces.");
-    return ok(SCHEME.test(trimmed) ? trimmed : `https://${trimmed}`);
+    return ok(hasScheme(trimmed) ? trimmed : `https://${trimmed}`);
 }
 
 export function textPayload(text: string): PayloadResult {

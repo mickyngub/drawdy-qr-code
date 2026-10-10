@@ -74,8 +74,10 @@ export function makeSlider(
 }
 
 export type SegmentedControl<T> = {
+    head: HTMLDivElement;
     set(value: T): void;
     setHidden(hidden: boolean): void;
+    setDisabled(values: T[]): void;
 };
 
 export function makeSegmented<T extends string | number>(
@@ -86,7 +88,7 @@ export function makeSegmented<T extends string | number>(
     onPick: (value: T) => void,
     grid = false
 ): SegmentedControl<T> {
-    const { wrap } = fieldWithLabel(parent, label);
+    const { wrap, head } = fieldWithLabel(parent, label);
     const row = el("div", grid ? "seg grid" : "seg", wrap);
     row.setAttribute("role", "group");
     row.setAttribute("aria-label", label);
@@ -110,9 +112,15 @@ export function makeSegmented<T extends string | number>(
     };
     paint(initial);
     return {
+        head,
         set: paint,
         setHidden(hidden) {
             wrap.hidden = hidden;
+        },
+        setDisabled(values) {
+            for (const entry of buttons) {
+                entry.button.disabled = values.includes(entry.value);
+            }
         },
     };
 }

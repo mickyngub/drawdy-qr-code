@@ -171,3 +171,66 @@ test("undo and redo from the panel go to the board history", async () => {
     assert.ok(types.includes("command:history:undo"));
     assert.ok(types.includes("command:history:redo"));
 });
+
+const LOGO = {
+    dataUrl: "data:image/png;base64,iVBORw0KGgo=",
+    pixelWidth: 512,
+    pixelHeight: 512,
+};
+
+const pictured: QrSpec = { ...spec, ecc: "H", logo: "drawdy" };
+
+const imagesIn = (host: FakeHost) =>
+    [...host.elements.values()].filter((el) => el.type === "image");
+
+test("a picture goes on top of its code, in the code's group", async () => {
+    const host = fakeHost();
+    const { message } = await boot(driver, host, manifest);
+    await message({ type: "ready" });
+    await message({ type: "place", spec: pictured, logo: LOGO });
+    const [add] = host.sent.filter(
+        (s) => s.type === "command:scene:add-drawdy-elements"
+    );
+    const last = add.req.elements.at(-1);
+    assert.equal(last.type, "image");
+    assert.equal(last.url, LOGO.dataUrl);
+    assert.equal(last.groupId, add.req.elements[0].groupId);
+    assert.equal(imagesIn(host).length, 1);
+});
+
+test("a picture that did not arrive is refused before anything is added", async () => {
+    const host = fakeHost();
+    const { message } = await boot(driver, host, manifest);
+    await message({ type: "ready" });
+    await message({
+        type: "place",
+        spec: pictured,
+        logo: { ...LOGO, dataUrl: "data:image/svg+xml,<svg/>" },
+    });
+    assert.ok(!host.types().includes("command:scene:add-drawdy-elements"));
+    assert.deepEqual(host.posted.at(-1), {
+        type: "error",
+        message: driver.LOGO_UNREADABLE,
+    });
+});
+
+test("an update swaps the old picture out with the rest of the code", async () => {
+    const host = fakeHost();
+    const { message } = await boot(driver, host, manifest);
+    await message({ type: "ready" });
+    await message({ type: "place", spec: pictured, logo: LOGO });
+    const [oldPicture] = imagesIn(host);
+    host.select([oldPicture.drawdyElementId]);
+    await message({ type: "edit" });
+    const loaded = host.posted.at(-1);
+    assert.equal(loaded.type, "load");
+    assert.equal(loaded.spec.logo, "drawdy");
+    const other = { ...LOGO, dataUrl: "data:image/png;base64,AAAA" };
+    await message({ type: "update", spec: pictured, logo: other });
+    const pictures = imagesIn(host);
+    assert.equal(pictures.length, 1);
+    assert.equal(pictures[0].url, other.dataUrl);
+    assert.ok(!host.elements.has(oldPicture.drawdyElementId));
+    await message({ type: "update", spec: { ...pictured, logo: "none" } });
+    assert.equal(imagesIn(host).length, 0);
+});

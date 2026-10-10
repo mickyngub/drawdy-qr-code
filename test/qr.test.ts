@@ -126,9 +126,9 @@ test("a known payload makes a known number of shapes in each style", () => {
     const m = encode("https://drawdy.io", "M");
     assert.equal(rowRuns(m.modules).length, 165);
     assert.equal(squareCells(m.modules).length, 147);
-    assert.equal(elementCount(m, "square"), 148);
-    assert.equal(elementCount(m, "dots"), 233);
-    assert.equal(elementCount(m, "rounded"), 233);
+    assert.equal(elementCount(m, { style: "square", logo: "none" }), 148);
+    assert.equal(elementCount(m, { style: "dots", logo: "none" }), 233);
+    assert.equal(elementCount(m, { style: "rounded", logo: "none" }), 233);
     const dark = m.modules.flat().filter(Boolean).length;
     const finderDark = 3 * (24 + 9);
     assert.equal(moduleMarks(m, "dots").length, 9 + dark - finderDark);

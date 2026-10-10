@@ -1,6 +1,13 @@
 import type { DrawdyElementSchema } from "@drawdy/driver-protocol";
 import { qrcodegen } from "../vendor/qrcodegen";
-import { captionInk, type Ecc, type ModuleStyle, type QrSpec } from "./spec";
+import {
+    captionInk,
+    hasLogo,
+    storedSpec,
+    type Ecc,
+    type ModuleStyle,
+    type QrSpec,
+} from "./spec";
 
 export const MAX_ELEMENTS = 3000;
 export const CAPTION_PADDING = 8;
@@ -194,8 +201,58 @@ export function moduleMarks(matrix: Matrix, style: ModuleStyle): Mark[] {
     return marks;
 }
 
-export function elementCount(matrix: Matrix, style: ModuleStyle): number {
-    return 1 + moduleMarks(matrix, style).length;
+const LOGO_SHARE = 0.24;
+const LOGO_INSET = 0.5;
+
+export type LogoBox = { start: number; span: number };
+
+// An odd span on an odd-sized code keeps the square centred on whole
+// modules. About a quarter of the width hides about 6% of the modules,
+// well inside what error correction H restores.
+export function logoBox(matrix: Matrix): LogoBox {
+    let span = Math.max(3, Math.round(matrix.size * LOGO_SHARE));
+    if (span % 2 === 0) span -= 1;
+    return { start: (matrix.size - span) / 2, span };
+}
+
+/** The picture's square in modules from the code's outer edge, quiet zone included. */
+export function logoRect(
+    matrix: Matrix,
+    quiet: number
+): { x: number; y: number; side: number } {
+    const box = logoBox(matrix);
+    const at = quiet + box.start + LOGO_INSET;
+    return { x: at, y: at, side: box.span - LOGO_INSET * 2 };
+}
+
+export function withoutLogoArea(matrix: Matrix): Matrix {
+    const { start, span } = logoBox(matrix);
+    const end = start + span;
+    return {
+        ...matrix,
+        modules: matrix.modules.map((row, y) =>
+            row.map((dark, x) =>
+                y >= start && y < end && x >= start && x < end ? false : dark
+            )
+        ),
+    };
+}
+
+export function codeMarks(
+    matrix: Matrix,
+    spec: Pick<QrSpec, "style" | "logo">
+): Mark[] {
+    return moduleMarks(
+        hasLogo(spec) ? withoutLogoArea(matrix) : matrix,
+        spec.style
+    );
+}
+
+export function elementCount(
+    matrix: Matrix,
+    spec: Pick<QrSpec, "style" | "logo">
+): number {
+    return 1 + codeMarks(matrix, spec).length + (hasLogo(spec) ? 1 : 0);
 }
 
 export type CaptionBlock = { fontSize: number; height: number; lines: number };
@@ -244,6 +301,8 @@ export type ElementPlan = {
     nextId: () => string;
     /** Every part of one code shares this group, so the board selects and moves it as one. */
     groupId?: string;
+    /** The square picture for the middle as a PNG data URL, needed when the spec has one. */
+    logo?: string;
 };
 
 export function buildElements(plan: ElementPlan): DrawdyElementSchema[] {
@@ -269,7 +328,7 @@ export function buildElements(plan: ElementPlan): DrawdyElementSchema[] {
         strokeWidth: 1,
         cornerRadius: 0,
         roughness: 0,
-        meta: { [driverId]: { v: 1, spec } },
+        meta: { [driverId]: { v: 1, spec: storedSpec(spec) } },
     };
     if (caption.lines > 0) {
         Object.assign(card, {
@@ -287,7 +346,7 @@ export function buildElements(plan: ElementPlan): DrawdyElementSchema[] {
     // it to keep its true size: a stroke that grows every dark module stops
     // scanners reading small codes.
     const elements: DrawdyElementSchema[] = [card];
-    for (const mark of moduleMarks(matrix, spec.style)) {
+    for (const mark of codeMarks(matrix, spec)) {
         const w = mark.w * unit;
         const h = mark.h * unit;
         const px = w > STROKE * 2 ? STROKE / 2 : 0;
@@ -311,6 +370,20 @@ export function buildElements(plan: ElementPlan): DrawdyElementSchema[] {
                 Math.min(mark.radius * unit - px, (w - px * 2) / 2)
             ),
             roughness: 0,
+            meta: part,
+        });
+    }
+    if (hasLogo(spec) && plan.logo) {
+        const rect = logoRect(matrix, spec.quiet);
+        elements.push({
+            type: "image",
+            drawdyElementId: nextId(),
+            groupId,
+            url: plan.logo,
+            x: plan.x + rect.x * unit,
+            y: plan.y + rect.y * unit,
+            width: rect.side * unit,
+            height: rect.side * unit,
             meta: part,
         });
     }

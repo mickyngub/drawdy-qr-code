@@ -17,6 +17,7 @@ import {
     checkContrast,
     DEFAULT_SETTINGS,
     DEFAULT_SPEC,
+    hasLogo,
     normalizeSettings,
     normalizeSpec,
     settingsOf,
@@ -25,12 +26,20 @@ import {
     type ContentType,
     type Ecc,
     type Fields,
+    type Logo,
     type ModuleStyle,
     type Output,
     type QrSpec,
     type WifiSecurity,
 } from "../src/shared/spec";
 import { isField, keyAction } from "./lib/keys";
+import {
+    DRAWDY_LOGO_URL,
+    loadedLogo,
+    logoPng,
+    logoSource,
+    readPicture,
+} from "./logos";
 import { drawPreview, pngSize, renderPng } from "./render";
 import {
     el,
@@ -89,7 +98,73 @@ const BACKGROUNDS: [string, string][] = [
     ["#fefce8", "Cream"],
     ["#ecfdf5", "Mint"],
     ["#eff6ff", "Sky"],
+    ["#c5f601", "Lime"],
 ];
+
+const LOGO_OPTIONS: [Logo, string][] = [
+    ["none", "None"],
+    ["drawdy", "Drawdy logo"],
+    ["custom", "Your picture"],
+];
+
+type Look = {
+    name: string;
+    title: string;
+    style: ModuleStyle;
+    fg: string;
+    bg: string;
+    logo?: Logo;
+};
+
+const LOOKS: Look[] = [
+    {
+        name: "Classic",
+        title: "Square ink modules on white",
+        style: "square",
+        fg: "#111827",
+        bg: "#ffffff",
+    },
+    {
+        name: "Drawdy",
+        title: "Rounded ink on lime with the Drawdy logo",
+        style: "rounded",
+        fg: "#111827",
+        bg: "#c5f601",
+        logo: "drawdy",
+    },
+    {
+        name: "Navy dots",
+        title: "Navy dots on sky blue",
+        style: "dots",
+        fg: "#1e3a8a",
+        bg: "#eff6ff",
+    },
+    {
+        name: "Mint",
+        title: "Rounded green on mint",
+        style: "rounded",
+        fg: "#065f46",
+        bg: "#ecfdf5",
+    },
+    {
+        name: "Cream",
+        title: "Brown dots on cream",
+        style: "dots",
+        fg: "#7c2d12",
+        bg: "#fefce8",
+    },
+    {
+        name: "Violet",
+        title: "Rounded purple on white",
+        style: "rounded",
+        fg: "#581c87",
+        bg: "#ffffff",
+    },
+];
+
+const THUMB_BOX = { width: 52, height: 52 };
+const SAMPLE = encodeMatrix("https://drawdy.io", "H");
+const PICTURE_TYPES = "image/png,image/jpeg,image/webp,image/gif,image/svg+xml";
 
 type TextField = Exclude<keyof Fields, "security" | "hidden">;
 
@@ -182,6 +257,7 @@ const GROUPS: Record<ContentType, (FieldDef | "security" | "hidden")[]> = {
 
 const api = acquireDrawdyApi();
 
+const stage = document.getElementById("stage") as HTMLDivElement;
 const canvas = document.getElementById("canvas") as HTMLCanvasElement;
 const hint = document.getElementById("hint") as HTMLDivElement;
 const hintText = document.getElementById("hint-text") as HTMLSpanElement;
@@ -201,6 +277,12 @@ let busy = false;
 let busyTimer = 0;
 let settingsTimer = 0;
 let capStatus = false;
+let eccBeforeLogo: Ecc | null = null;
+
+const fileInput = el("input", undefined, document.body);
+fileInput.type = "file";
+fileInput.accept = PICTURE_TYPES;
+fileInput.hidden = true;
 
 let current: {
     payload: PayloadResult;
@@ -228,6 +310,9 @@ const controls: {
     contrast: HTMLDivElement | null;
     caption: TextControl | null;
     output: SegmentedControl<Output> | null;
+    logo: SegmentedControl<Logo> | null;
+    logoNote: HTMLDivElement | null;
+    looks: { look: Look; button: HTMLButtonElement; thumb: HTMLCanvasElement }[];
 } = {
     content: null,
     groups: {},
@@ -244,6 +329,9 @@ const controls: {
     contrast: null,
     caption: null,
     output: null,
+    logo: null,
+    logoNote: null,
+    looks: [],
 };
 
 function send(message: WebviewToDriver): void {
@@ -333,13 +421,104 @@ function paintContrast(): void {
             : `Contrast is ${ratio}. Phones may not scan this. Aim for 4:1 or more.`;
 }
 
+function pictureImage(): HTMLImageElement | null {
+    const src = logoSource(spec);
+    return src ? loadedLogo(src, onPictureLoaded) : null;
+}
+
+function onPictureLoaded(): void {
+    if (current.matrix && !canvas.hidden) {
+        drawPreview(canvas, current.matrix, spec, PREVIEW_BOX, pictureImage());
+    }
+    paintLooks();
+}
+
+function lookSpec(look: Look): QrSpec {
+    return {
+        ...spec,
+        style: look.style,
+        fg: look.fg,
+        bg: look.bg,
+        logo: look.logo ?? spec.logo,
+        quiet: 2,
+        caption: "",
+    };
+}
+
+function paintLooks(): void {
+    for (const { look, button, thumb } of controls.looks) {
+        const shown = lookSpec(look);
+        if (SAMPLE) {
+            const src = logoSource(shown);
+            const picture = src ? loadedLogo(src, onPictureLoaded) : null;
+            drawPreview(thumb, SAMPLE, shown, THUMB_BOX, picture);
+        }
+        const on =
+            look.style === spec.style &&
+            look.fg === spec.fg &&
+            look.bg === spec.bg &&
+            (!look.logo || look.logo === spec.logo);
+        button.classList.toggle("on", on);
+        button.setAttribute("aria-pressed", String(on));
+    }
+}
+
+function paintPicture(): void {
+    const on = hasLogo(spec);
+    controls.logo?.set(spec.logo);
+    controls.ecc?.set(spec.ecc);
+    controls.ecc?.setDisabled(on ? ["L", "M", "Q"] : []);
+    if (controls.logoNote) controls.logoNote.hidden = !on;
+}
+
+// A picture needs H; the level from before comes back when it is removed.
+function pictureChange(logo: Logo): Partial<QrSpec> {
+    if (logo === spec.logo) return {};
+    if (logo === "none") {
+        const ecc = eccBeforeLogo ?? spec.ecc;
+        eccBeforeLogo = null;
+        return { logo, ecc };
+    }
+    if (!hasLogo(spec)) eccBeforeLogo = spec.ecc;
+    return { logo, ecc: "H" };
+}
+
+function setPicture(logo: Logo): void {
+    commit(pictureChange(logo));
+    paintPicture();
+}
+
+function applyLook(look: Look): void {
+    commit({
+        style: look.style,
+        fg: look.fg,
+        bg: look.bg,
+        ...pictureChange(look.logo ?? spec.logo),
+    });
+    pushControls();
+}
+
+async function usePicture(file: File): Promise<void> {
+    const picture = await readPicture(file);
+    if (!picture) {
+        setStatus(
+            "That file is not a picture the panel can read. Try a PNG, JPG or SVG under 10 MB.",
+            "bad"
+        );
+        return;
+    }
+    spec = { ...spec, logoImage: picture };
+    setPicture("custom");
+    setStatus("Your picture is in the middle of the code.", "good");
+}
+
 function recompute(): void {
     const payload = buildPayload(spec.content, spec.fields);
     const matrix = payload.ok ? encodeMatrix(payload.payload, spec.ecc) : null;
     current = {
         payload,
         matrix,
-        count: matrix ? elementCount(matrix, spec.style) : 0,
+        count: matrix ? elementCount(matrix, spec) : 0,
     };
     controls.payload?.set(payload.ok ? payload.payload : "");
 
@@ -354,7 +533,7 @@ function recompute(): void {
     } else {
         setHint(null);
         canvas.hidden = false;
-        drawPreview(canvas, matrix, spec, PREVIEW_BOX);
+        drawPreview(canvas, matrix, spec, PREVIEW_BOX, pictureImage());
         const grid = `Version ${matrix.version} · ${matrix.size} × ${matrix.size} modules`;
         if (spec.output === "image") {
             const px = pngSize(matrix, spec);
@@ -377,6 +556,7 @@ function commit(next: Partial<QrSpec>, persist = true): void {
     spec = { ...spec, ...next };
     paintContrast();
     recompute();
+    paintLooks();
     if (persist) queueSettings();
 }
 
@@ -417,7 +597,9 @@ function pushControls(): void {
     controls.bg?.set(spec.bg);
     controls.caption?.set(spec.caption);
     controls.output?.set(spec.output);
+    paintPicture();
     paintContrast();
+    paintLooks();
 }
 
 function buildContent(): void {
@@ -480,6 +662,8 @@ function buildContent(): void {
     });
 
     makeRule(content);
+    buildLook();
+    makeRule(content);
 
     const head = el("div", "section-head", content);
     const title = el("span", undefined, head);
@@ -488,7 +672,13 @@ function buildContent(): void {
     reset.type = "button";
     reset.textContent = "Reset options";
     reset.addEventListener("click", () => {
-        spec = { ...spec, ...DEFAULT_SETTINGS, content: spec.content };
+        spec = {
+            ...spec,
+            ...DEFAULT_SETTINGS,
+            content: spec.content,
+            logoImage: spec.logoImage,
+        };
+        eccBeforeLogo = null;
         pushControls();
         recompute();
         queueSettings();
@@ -566,24 +756,87 @@ function buildContent(): void {
     );
 }
 
+function buildLook(): void {
+    const head = el("div", "section-head", content);
+    const title = el("span", undefined, head);
+    title.textContent = "Look";
+
+    controls.logo = makeSegmented<Logo>(
+        content,
+        "Picture in the middle",
+        LOGO_OPTIONS,
+        spec.logo,
+        (logo) => {
+            if (logo === "custom" && !spec.logoImage) {
+                controls.logo?.set(spec.logo);
+                fileInput.click();
+                return;
+            }
+            setPicture(logo);
+        }
+    );
+    const upload = el("button", "link-btn", controls.logo.head);
+    upload.type = "button";
+    upload.textContent = "Upload…";
+    upload.title = "Pick a PNG, JPG, WebP, GIF or SVG, or drop one on the preview";
+    upload.addEventListener("click", () => fileInput.click());
+    controls.logoNote = el("div", "note", content);
+    controls.logoNote.textContent =
+        "Error correction stays at H while a picture covers the middle, so the code still scans.";
+    controls.logoNote.hidden = true;
+
+    const field = el("div", "field", content);
+    const fieldHead = el("div", "field-head", field);
+    const label = el("span", "label", fieldHead);
+    label.textContent = "Presets";
+    const grid = el("div", "looks", field);
+    grid.setAttribute("role", "group");
+    grid.setAttribute("aria-label", "Presets");
+    controls.looks = LOOKS.map((look) => {
+        const button = el("button", "look", grid);
+        button.type = "button";
+        button.title = look.title;
+        const thumb = el("canvas", undefined, button);
+        thumb.setAttribute("aria-hidden", "true");
+        const name = el("span", undefined, button);
+        name.textContent = look.name;
+        button.addEventListener("click", () => applyLook(look));
+        return { look, button, thumb };
+    });
+}
+
 function submit(update: boolean): void {
     if (busy || !canPlace() || !current.matrix) return;
     if (update && !editing) return;
+    const src = logoSource(spec);
+    const picture = pictureImage();
+    if (src && !picture) {
+        setStatus("The picture is still loading. Try again in a moment.", "bad");
+        return;
+    }
     let image: PngImage | undefined;
+    let logo: PngImage | undefined;
     if (spec.output === "image") {
-        const png = renderPng(current.matrix, spec);
+        const png = renderPng(current.matrix, spec, picture);
         if (!png) {
             setStatus("The image could not be made.", "bad");
             return;
         }
         image = png;
+    } else if (src && picture) {
+        const png = logoPng(src, picture);
+        if (!png) {
+            setStatus("The picture could not be prepared.", "bad");
+            return;
+        }
+        logo = png;
     }
     setBusy(true);
     setStatus(update ? "Updating…" : "Placing…");
     send(
         update
-            ? { type: "update", spec, image }
-            : { type: "place", spec, image }
+            ? { type: "update", spec, image, logo }
+            : { type: "place", spec, image, logo }
     );
 }
 
@@ -633,6 +886,36 @@ function wire(): void {
         send({ type: "stop-edit" });
         setStatus("Stopped editing. Place on board adds a new QR code.");
     });
+    fileInput.addEventListener("change", () => {
+        const file = fileInput.files?.[0];
+        fileInput.value = "";
+        if (file) void usePicture(file);
+    });
+    // A file dropped anywhere else would navigate the panel to it.
+    const carriesFiles = (event: DragEvent) =>
+        event.dataTransfer?.types.includes("Files") === true;
+    document.addEventListener("dragover", (event) => {
+        if (!carriesFiles(event)) return;
+        event.preventDefault();
+        if (event.dataTransfer) {
+            event.dataTransfer.dropEffect = stage.contains(event.target as Node)
+                ? "copy"
+                : "none";
+        }
+        stage.classList.toggle("drop", stage.contains(event.target as Node));
+    });
+    document.addEventListener("dragleave", (event) => {
+        if (!stage.contains(event.relatedTarget as Node | null)) {
+            stage.classList.remove("drop");
+        }
+    });
+    document.addEventListener("drop", (event) => {
+        if (!carriesFiles(event)) return;
+        event.preventDefault();
+        stage.classList.remove("drop");
+        const file = event.dataTransfer?.files[0];
+        if (file && stage.contains(event.target as Node)) void usePicture(file);
+    });
     document.addEventListener("keydown", (event) => {
         const action = keyAction(event, isField(event.target));
         if (!action) return;
@@ -661,7 +944,10 @@ function handle(message: DriverToWebview): void {
             return;
         }
         case "load": {
+            const upload = spec.logoImage;
             spec = normalizeSpec(message.spec);
+            if (!spec.logoImage) spec.logoImage = upload;
+            eccBeforeLogo = null;
             editing = true;
             pushControls();
             recompute();
@@ -687,6 +973,7 @@ function handle(message: DriverToWebview): void {
     }
 }
 
+loadedLogo(DRAWDY_LOGO_URL, onPictureLoaded);
 buildContent();
 addPasswordToggle();
 wire();

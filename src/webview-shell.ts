@@ -179,6 +179,8 @@ input[type="range"]::-moz-range-thumb {
     text-overflow: ellipsis;
 }
 .seg button:hover { color: var(--drawdy-foreground, #111111); }
+.seg button:disabled { opacity: 0.4; cursor: default; }
+.seg button:disabled:hover { color: var(--drawdy-muted-foreground, #7a7a7a); }
 .seg button.on {
     background: var(--drawdy-primary, #4f46e5);
     border-color: var(--drawdy-primary, #4f46e5);
@@ -210,6 +212,36 @@ input[type="color"] {
     color: var(--drawdy-muted-foreground, #7a7a7a);
 }
 .note.bad { color: var(--drawdy-destructive, #dc2626); }
+.note[hidden] { display: none; }
+
+.looks {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+}
+.look {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    padding: 6px 4px 5px;
+    border: 1px solid var(--drawdy-border, #e5e5e5);
+    border-radius: var(--drawdy-radius-md, 8px);
+    background: transparent;
+    color: var(--drawdy-muted-foreground, #7a7a7a);
+    font-size: 10px;
+    cursor: pointer;
+}
+.look:hover { color: var(--drawdy-foreground, #111111); }
+.look.on {
+    border-color: var(--drawdy-primary, #4f46e5);
+    box-shadow: 0 0 0 1px var(--drawdy-primary, #4f46e5);
+    color: var(--drawdy-foreground, #111111);
+}
+.look canvas { display: block; border-radius: 3px; }
+.look span { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stage.drop { border-color: var(--drawdy-primary, #4f46e5); border-style: dashed; }
 
 .rule {
     height: 1px;

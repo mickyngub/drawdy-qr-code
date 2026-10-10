@@ -29,7 +29,14 @@ import {
     TOO_LONG_MESSAGE,
     tooManyShapesMessage,
 } from "./shared/qr";
-import { normalizeSpec, SIZE_MAX, SIZE_MIN, type QrSpec } from "./shared/spec";
+import {
+    hasLogo,
+    normalizeSpec,
+    SIZE_MAX,
+    SIZE_MIN,
+    storedSpec,
+    type QrSpec,
+} from "./shared/spec";
 import { WEBVIEW_HTML } from "./webview-html";
 
 // Drawdy shows this through <img>, where currentColor is black, so the colours are explicit.
@@ -348,7 +355,9 @@ async function handleWebviewMessage(message: WebviewToDriver): Promise<void> {
             return;
         }
         case "place": {
-            await enqueue(() => place(message.spec, message.image));
+            await enqueue(() =>
+                place(message.spec, message.image, message.logo)
+            );
             return;
         }
         case "edit": {
@@ -356,7 +365,9 @@ async function handleWebviewMessage(message: WebviewToDriver): Promise<void> {
             return;
         }
         case "update": {
-            await enqueue(() => update(message.spec, message.image));
+            await enqueue(() =>
+                update(message.spec, message.image, message.logo)
+            );
             return;
         }
         case "stop-edit": {
@@ -509,6 +520,16 @@ type Keep = {
     opacity?: number;
 };
 
+const isPng = (image: PngImage | undefined): image is PngImage =>
+    !!image &&
+    typeof image.dataUrl === "string" &&
+    image.dataUrl.startsWith("data:image/png") &&
+    image.pixelWidth > 0 &&
+    image.pixelHeight > 0;
+
+export const LOGO_UNREADABLE =
+    "The picture for the middle could not be read. Pick it again.";
+
 function buildImage(
     spec: QrSpec,
     image: PngImage | undefined,
@@ -517,13 +538,7 @@ function buildImage(
     keep: Keep
 ): Built {
     if (!driver) return { ok: false, message: "" };
-    if (
-        !image ||
-        typeof image.dataUrl !== "string" ||
-        !image.dataUrl.startsWith("data:image/png") ||
-        !(image.pixelWidth > 0) ||
-        !(image.pixelHeight > 0)
-    ) {
+    if (!isPng(image)) {
         return { ok: false, message: "That image could not be read." };
     }
     const height = spec.size * (image.pixelHeight / image.pixelWidth);
@@ -541,27 +556,37 @@ function buildImage(
                 height,
                 ...keep,
                 meta: {
-                    [driver.manifest.driverId]: { v: 1, params: spec },
+                    [driver.manifest.driverId]: {
+                        v: 1,
+                        params: storedSpec(spec),
+                    },
                 },
             },
         ],
     };
 }
 
+type Pixels = { image?: PngImage; logo?: PngImage };
+
 function build(
     spec: QrSpec,
-    image: PngImage | undefined,
+    pixels: Pixels,
     x: number,
     y: number,
     keep: Keep = {}
 ): Built {
     if (!driver) return { ok: false, message: "" };
-    if (spec.output === "image") return buildImage(spec, image, x, y, keep);
+    if (spec.output === "image") {
+        return buildImage(spec, pixels.image, x, y, keep);
+    }
+    if (hasLogo(spec) && !isPng(pixels.logo)) {
+        return { ok: false, message: LOGO_UNREADABLE };
+    }
     const payload = buildPayload(spec.content, spec.fields);
     if (!payload.ok) return { ok: false, message: payload.message };
     const matrix = encodeMatrix(payload.payload, spec.ecc);
     if (!matrix) return { ok: false, message: TOO_LONG_MESSAGE };
-    const count = elementCount(matrix, spec.style);
+    const count = elementCount(matrix, spec);
     if (count > MAX_ELEMENTS) {
         return { ok: false, message: tooManyShapesMessage(count) };
     }
@@ -574,6 +599,7 @@ function build(
         driverId: driver.manifest.driverId,
         nextId: driver.generateId,
         groupId,
+        logo: pixels.logo?.dataUrl,
     }).map((e) => ({ ...e, ...style }) as DrawdyElementSchema);
     return {
         ok: true,
@@ -612,11 +638,13 @@ async function addAll(elements: DrawdyElementSchema[]): Promise<Added> {
 
 async function place(
     rawSpec: unknown,
-    image: PngImage | undefined
+    image: PngImage | undefined,
+    logo: PngImage | undefined
 ): Promise<void> {
     if (!driver) return;
     const spec = normalizeSpec(rawSpec);
-    const measured = build(spec, image, 0, 0);
+    const pixels = { image, logo };
+    const measured = build(spec, pixels, 0, 0);
     if (!measured.ok) {
         post({ type: "error", message: measured.message });
         return;
@@ -630,7 +658,7 @@ async function place(
         x: Math.round(centred.x),
         y: Math.round(centred.y),
     });
-    const built = build(spec, image, rect.x, rect.y);
+    const built = build(spec, pixels, rect.x, rect.y);
     if (!driver || !built.ok) return;
     const added = await addAll(built.elements);
     if (!driver) return;
@@ -661,7 +689,8 @@ export function keptStyle(
 
 async function update(
     rawSpec: unknown,
-    image: PngImage | undefined
+    image: PngImage | undefined,
+    logo: PngImage | undefined
 ): Promise<void> {
     if (!driver) return;
     const editing = driver.editing;
@@ -691,7 +720,13 @@ async function update(
     if (Math.abs(box.width - editing.width) > 1) {
         spec.size = clampSize(box.width);
     }
-    const built = build(spec, image, box.x, box.y, keptStyle(head, members));
+    const built = build(
+        spec,
+        { image, logo },
+        box.x,
+        box.y,
+        keptStyle(head, members)
+    );
     if (!built.ok) {
         post({ type: "error", message: built.message });
         return;

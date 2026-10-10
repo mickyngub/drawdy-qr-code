@@ -1,15 +1,17 @@
 import {
     CAPTION_PADDING,
     captionBlock,
+    codeMarks,
+    logoRect,
     MAX_IMAGE_SIDE,
-    moduleMarks,
     pixelLayout,
     spanModules,
     type Matrix,
 } from "../src/shared/qr";
-import { captionInk, type QrSpec } from "../src/shared/spec";
+import { captionInk, hasLogo, type QrSpec } from "../src/shared/spec";
 import type { PngImage } from "../src/shared/messages";
 import { wrapCaption } from "./lib/wrap";
+import { drawContained } from "./logos";
 
 const CAPTION_FONT =
     'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif';
@@ -78,12 +80,13 @@ function paint(
     matrix: Matrix,
     spec: QrSpec,
     frame: Frame,
-    modulePx: number
+    modulePx: number,
+    logo: HTMLImageElement | null
 ): void {
     ctx.fillStyle = spec.bg;
     ctx.fillRect(0, 0, frame.width, frame.height);
     const origin = spec.quiet * modulePx;
-    for (const mark of moduleMarks(matrix, spec.style)) {
+    for (const mark of codeMarks(matrix, spec)) {
         ctx.fillStyle = mark.tone === "fg" ? spec.fg : spec.bg;
         const x = origin + mark.x * modulePx;
         const y = origin + mark.y * modulePx;
@@ -100,6 +103,16 @@ function paint(
             roundedRect(ctx, x, y, w, h, mark.radius * modulePx);
         }
         ctx.fill();
+    }
+    if (logo && hasLogo(spec)) {
+        const rect = logoRect(matrix, spec.quiet);
+        drawContained(
+            ctx,
+            logo,
+            rect.x * modulePx,
+            rect.y * modulePx,
+            rect.side * modulePx
+        );
     }
     if (frame.captionLines.length === 0) return;
     const lineHeight = frame.fontPx * 1.4;
@@ -120,7 +133,8 @@ export function drawPreview(
     canvas: HTMLCanvasElement,
     matrix: Matrix,
     spec: QrSpec,
-    box: { width: number; height: number }
+    box: { width: number; height: number },
+    logo: HTMLImageElement | null
 ): void {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
@@ -143,7 +157,8 @@ export function drawPreview(
         matrix,
         spec,
         frame,
-        canvas.width / spanModules(matrix, spec.quiet)
+        canvas.width / spanModules(matrix, spec.quiet),
+        logo
     );
 }
 
@@ -159,7 +174,11 @@ export function pngSize(
     return { width: layout.codePx, height: Math.ceil(frame.height) };
 }
 
-export function renderPng(matrix: Matrix, spec: QrSpec): PngImage | null {
+export function renderPng(
+    matrix: Matrix,
+    spec: QrSpec,
+    logo: HTMLImageElement | null
+): PngImage | null {
     const layout = pixelLayout(matrix, spec);
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d");
@@ -168,7 +187,7 @@ export function renderPng(matrix: Matrix, spec: QrSpec): PngImage | null {
     canvas.width = layout.codePx;
     canvas.height = Math.min(MAX_IMAGE_SIDE, Math.ceil(frame.height));
     frame.height = canvas.height;
-    paint(ctx, matrix, spec, frame, layout.modulePx);
+    paint(ctx, matrix, spec, frame, layout.modulePx, logo);
     const dataUrl = canvas.toDataURL("image/png");
     if (!dataUrl.startsWith("data:image/png")) return null;
     return {

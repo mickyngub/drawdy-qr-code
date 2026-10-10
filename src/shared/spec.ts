@@ -16,6 +16,9 @@ export type Ecc = (typeof ECC_LEVELS)[number];
 export const MODULE_STYLES = ["square", "dots", "rounded"] as const;
 export type ModuleStyle = (typeof MODULE_STYLES)[number];
 
+export const LOGOS = ["none", "drawdy", "custom"] as const;
+export type Logo = (typeof LOGOS)[number];
+
 export const OUTPUTS = ["shapes", "image"] as const;
 export type Output = (typeof OUTPUTS)[number];
 
@@ -28,6 +31,8 @@ export const SIZE_MIN = 80;
 export const SIZE_MAX = 1200;
 export const CAPTION_MAX = 80;
 const FIELD_MAX = 2000;
+export const LOGO_IMAGE_MAX = 600_000;
+const LOGO_IMAGE_PREFIX = "data:image/png;base64,";
 
 export type Fields = {
     url: string;
@@ -59,6 +64,9 @@ export type Settings = {
     size: number;
     fg: string;
     bg: string;
+    logo: Logo;
+    /** The uploaded picture as a PNG data URL, kept while another picture is chosen. */
+    logoImage: string;
     output: Output;
 };
 
@@ -97,6 +105,8 @@ export const DEFAULT_SETTINGS: Settings = {
     size: 240,
     fg: "#111827",
     bg: "#ffffff",
+    logo: "none",
+    logoImage: "",
     output: "shapes",
 };
 
@@ -119,13 +129,25 @@ const oneOf = <T>(list: readonly T[], value: unknown, fallback: T): T =>
 const text = (value: unknown, fallback: string, max: number): string =>
     typeof value === "string" ? value.slice(0, max) : fallback;
 
+export const hasLogo = (settings: Pick<Settings, "logo">): boolean =>
+    settings.logo !== "none";
+
 export function normalizeSettings(raw: unknown): Settings {
     const r = record(raw);
     const d = DEFAULT_SETTINGS;
     const size = Number(r.size);
+    const logoImage =
+        typeof r.logoImage === "string" &&
+        r.logoImage.startsWith(LOGO_IMAGE_PREFIX) &&
+        r.logoImage.length <= LOGO_IMAGE_MAX
+            ? r.logoImage
+            : "";
+    let logo = oneOf(LOGOS, r.logo, d.logo);
+    if (logo === "custom" && !logoImage) logo = "none";
     return {
         content: oneOf(CONTENT_TYPES, r.content, d.content),
-        ecc: oneOf(ECC_LEVELS, r.ecc, d.ecc),
+        // A picture hides part of the code, so it needs the most error correction.
+        ecc: logo === "none" ? oneOf(ECC_LEVELS, r.ecc, d.ecc) : "H",
         quiet: oneOf<number>(QUIET_ZONES, r.quiet, d.quiet),
         style: oneOf(MODULE_STYLES, r.style, d.style),
         size: Number.isFinite(size)
@@ -139,6 +161,8 @@ export function normalizeSettings(raw: unknown): Settings {
             typeof r.bg === "string" && HEX.test(r.bg)
                 ? r.bg.toLowerCase()
                 : d.bg,
+        logo,
+        logoImage,
         output: oneOf(OUTPUTS, r.output, d.output),
     };
 }
@@ -166,9 +190,14 @@ export function normalizeSpec(raw: unknown): QrSpec {
     };
 }
 
+/** What a code keeps in its meta: an upload only when the code shows it. */
+export const storedSpec = (spec: QrSpec): QrSpec =>
+    spec.logo === "custom" ? spec : { ...spec, logoImage: "" };
+
 export function settingsOf(spec: QrSpec): Settings {
-    const { content, ecc, quiet, style, size, fg, bg, output } = spec;
-    return { content, ecc, quiet, style, size, fg, bg, output };
+    const { content, ecc, quiet, style, size, fg, bg, logo, logoImage, output } =
+        spec;
+    return { content, ecc, quiet, style, size, fg, bg, logo, logoImage, output };
 }
 
 function channel(value: number): number {

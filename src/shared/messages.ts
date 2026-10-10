@@ -16,9 +16,9 @@ export type PngImage = {
 export type WebviewToDriver =
     | { type: "ready" }
     | { type: "settings"; settings: Record<string, unknown> }
-    | { type: "place"; spec: QrSpec; image?: PngImage }
+    | { type: "place"; spec: QrSpec; image?: PngImage; logo?: PngImage }
     | { type: "edit" }
-    | { type: "update"; spec: QrSpec; image?: PngImage }
+    | { type: "update"; spec: QrSpec; image?: PngImage; logo?: PngImage }
     | { type: "stop-edit" }
     | { type: "undo" }
     | { type: "redo" }

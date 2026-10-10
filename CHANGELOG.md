@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.2
+
+- a clearer listing page: what the extension is for, how to use it, tips and privacy, in plain words
+
 ## 1.0.1
 
 - the preview stays at the top of the panel while the options scroll under it

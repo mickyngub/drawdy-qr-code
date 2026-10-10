@@ -16,6 +16,15 @@ body {
 button, input, select, textarea { font: inherit; color: inherit; }
 :focus-visible { outline: 2px solid var(--drawdy-primary, #4f46e5); outline-offset: 1px; }
 
+.pinned {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 10px 12px 8px;
+    border-bottom: 1px solid var(--drawdy-border, #e5e5e5);
+}
+
 .scroll {
     flex: 1;
     min-height: 0;
@@ -328,12 +337,14 @@ const BODY = `
     <span>Editing a QR code from the board.</span>
     <button type="button" class="link" id="stop-edit">Stop editing</button>
 </div>
-<main class="scroll" id="scroll">
+<div class="pinned">
     <div class="stage" id="stage">
         <canvas id="canvas" role="img" aria-label="QR code preview" hidden></canvas>
         <div class="hint" id="hint"><span id="hint-text"></span></div>
     </div>
     <div class="readout" id="readout"></div>
+</div>
+<main class="scroll" id="scroll">
     <div id="content"></div>
 </main>
 <footer>

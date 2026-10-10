@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.1
+
+- the preview stays at the top of the panel while the options scroll under it
+
 ## 1.0.0
 
 First public release

@@ -2,6 +2,8 @@
 
 Make a scannable QR code for a link, a Wi-Fi login, a contact card and more, with the Drawdy logo or your own picture in the middle, and place it on your Drawdy board.
 
+![Typing drawdy.io into the QR Code panel, adding the Drawdy logo, the Navy dots preset and a caption, then placing the code on the board next to a sticky note.](https://raw.githubusercontent.com/mickyngub/drawdy-qr-code/main/docs/media/qr-code.gif)
+
 ## What it's for
 
 - **Events and workshops**: put the Wi-Fi login or the board link on a slide, and people join by scanning.

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.3
+
+- a short GIF on the listing page that shows the panel in action: a link, the Drawdy logo, the Navy dots preset and a caption, placed on the board
+
 ## 1.0.2
 
 - a clearer listing page: what the extension is for, how to use it, tips and privacy, in plain words
